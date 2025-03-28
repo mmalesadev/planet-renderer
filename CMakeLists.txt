@@ -1,0 +1,19 @@
+cmake_minimum_required(VERSION 4.0)
+
+project(planet-renderer)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED_ON)
+
+find_package(Vulkan REQUIRED)
+
+file(GLOB SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
+
+add_executable(${PROJECT_NAME} ${SRC})
+
+add_subdirectory(libs/SDL)
+add_subdirectory(libs/spdlog)
+add_subdirectory(libs/glm)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES} SDL3::SDL3 glm::glm spdlog::spdlog)
+
