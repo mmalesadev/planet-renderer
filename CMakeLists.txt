@@ -11,9 +11,10 @@ file(GLOB SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
 
 add_executable(${PROJECT_NAME} ${SRC})
 
+set(SDL_TEST_LIBRARY OFF)
 add_subdirectory(libs/SDL)
 add_subdirectory(libs/spdlog)
 add_subdirectory(libs/glm)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES} SDL3::SDL3 glm::glm spdlog::spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan SDL3::SDL3 glm::glm spdlog::spdlog)
 
