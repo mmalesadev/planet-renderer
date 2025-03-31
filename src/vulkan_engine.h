@@ -60,6 +60,19 @@ private:
   CreateShaderModule(const std::vector<char> &code);
   void CreateRenderPass();
 
+  // Framebuffers
+  void CreateFramebuffers();
+
+  // Commands
+  void CreateCommandPool();
+  void CreateCommandBuffer();
+  void RecordCommandBuffer(VkCommandBuffer command_buffer,
+                           uint32_t image_index);
+
+  // Drawing
+  void CreateSyncObjects();
+  void DrawFrame();
+
   VkInstance instance_;
   VkDebugUtilsMessengerEXT debug_messenger_;
   VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
@@ -75,6 +88,12 @@ private:
   VkRenderPass render_pass_;
   VkPipelineLayout pipeline_layout_;
   VkPipeline graphics_pipeline_;
+  std::vector<VkFramebuffer> swap_chain_framebuffers_;
+  VkCommandPool command_pool_;
+  VkCommandBuffer command_buffer_;
+  VkSemaphore image_available_semaphore_;
+  VkSemaphore render_finished_semaphore_;
+  VkFence in_flight_fence_;
 
   bool running_;
   SDL_Window *window_;

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fcntl.h>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
@@ -66,6 +67,10 @@ void VulkanEngine::Init() {
   CreateImageViews();
   CreateRenderPass();
   CreateGraphicsPipeline();
+  CreateFramebuffers();
+  CreateCommandPool();
+  CreateCommandBuffer();
+  CreateSyncObjects();
 }
 
 void VulkanEngine::Run() {
@@ -77,12 +82,22 @@ void VulkanEngine::Run() {
       }
     }
 
+    DrawFrame();
+
+    vkDeviceWaitIdle(device_);
     // Slow down to 60 FPS
     SDL_Delay(16);
   }
 }
 
 void VulkanEngine::Destroy() {
+  vkDestroySemaphore(device_, image_available_semaphore_, nullptr);
+  vkDestroySemaphore(device_, render_finished_semaphore_, nullptr);
+  vkDestroyFence(device_, in_flight_fence_, nullptr);
+  vkDestroyCommandPool(device_, command_pool_, nullptr);
+  for (auto framebuffer : swap_chain_framebuffers_) {
+    vkDestroyFramebuffer(device_, framebuffer, nullptr);
+  }
   vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
   vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
   vkDestroyRenderPass(device_, render_pass_, nullptr);
@@ -556,18 +571,44 @@ void VulkanEngine::CreateRenderPass() {
   subpass.colorAttachmentCount = 1;
   subpass.pColorAttachments = &color_attachment_ref;
 
+  VkSubpassDependency dependency{};
+  dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+  dependency.dstSubpass = 0;
+  dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  dependency.srcAccessMask = 0;
+  dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
   VkRenderPassCreateInfo render_pass_info{};
   render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
   render_pass_info.attachmentCount = 1;
   render_pass_info.pAttachments = &color_attachment;
   render_pass_info.subpassCount = 1;
   render_pass_info.pSubpasses = &subpass;
+  render_pass_info.dependencyCount = 1;
+  render_pass_info.pDependencies = &dependency;
 
   if (vkCreateRenderPass(device_, &render_pass_info, nullptr, &render_pass_) !=
       VK_SUCCESS) {
     spdlog::error("Failed to create render pass.");
     return;
   }
+}
+
+std::optional<VkShaderModule>
+VulkanEngine::CreateShaderModule(const std::vector<char> &code) {
+  VkShaderModuleCreateInfo create_info{};
+  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  create_info.codeSize = code.size();
+  create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+  VkShaderModule shader_module;
+  if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) !=
+      VK_SUCCESS) {
+    spdlog::error("Failed to create shader module.");
+    return std::nullopt;
+  }
+  return shader_module;
 }
 
 void VulkanEngine::CreateGraphicsPipeline() {
@@ -590,7 +631,7 @@ void VulkanEngine::CreateGraphicsPipeline() {
   VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
   frag_shader_stage_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-  frag_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+  frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
   frag_shader_stage_info.module = *frag_shader_module;
   frag_shader_stage_info.pName = "main";
 
@@ -693,18 +734,163 @@ void VulkanEngine::CreateGraphicsPipeline() {
   vkDestroyShaderModule(device_, *frag_shader_module, nullptr);
 }
 
-std::optional<VkShaderModule>
-VulkanEngine::CreateShaderModule(const std::vector<char> &code) {
-  VkShaderModuleCreateInfo create_info{};
-  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  create_info.codeSize = code.size();
-  create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());
+void VulkanEngine::CreateFramebuffers() {
+  swap_chain_framebuffers_.resize(swap_chain_image_views_.size());
+  for (size_t i = 0; i < swap_chain_image_views_.size(); ++i) {
+    VkImageView attachments[] = {swap_chain_image_views_[i]};
 
-  VkShaderModule shader_module;
-  if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) !=
-      VK_SUCCESS) {
-    spdlog::error("Failed to create shader module.");
-    return std::nullopt;
+    VkFramebufferCreateInfo framebuffer_info{};
+    framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_info.renderPass = render_pass_;
+    framebuffer_info.attachmentCount = 1;
+    framebuffer_info.pAttachments = attachments;
+    framebuffer_info.width = swap_chain_extent_.width;
+    framebuffer_info.height = swap_chain_extent_.height;
+    framebuffer_info.layers = 1;
+
+    if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr,
+                            &swap_chain_framebuffers_[i]) != VK_SUCCESS) {
+      spdlog::error("Failed to create framebuffer.");
+      return;
+    }
   }
-  return shader_module;
+}
+
+void VulkanEngine::CreateCommandPool() {
+  QueueFamilyIndices queue_family_indices = FindQueueFamilies(physical_device_);
+
+  VkCommandPoolCreateInfo pool_info{};
+  pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+
+  if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) !=
+      VK_SUCCESS) {
+    spdlog::error("Failed to create command pool.");
+    return;
+  }
+}
+
+void VulkanEngine::CreateCommandBuffer() {
+  VkCommandBufferAllocateInfo allocate_info{};
+  allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocate_info.commandPool = command_pool_;
+  allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocate_info.commandBufferCount = 1;
+
+  if (vkAllocateCommandBuffers(device_, &allocate_info, &command_buffer_) !=
+      VK_SUCCESS) {
+    spdlog::error("Failed to allocate command buffers.");
+    return;
+  }
+}
+
+void VulkanEngine::RecordCommandBuffer(VkCommandBuffer command_buffer,
+                                       uint32_t image_index) {
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+  if (vkBeginCommandBuffer(command_buffer, &begin_info)) {
+    spdlog::error("Failed to begin recording command buffer.");
+    return;
+  }
+
+  VkRenderPassBeginInfo render_pass_info{};
+  render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  render_pass_info.renderPass = render_pass_;
+  render_pass_info.framebuffer = swap_chain_framebuffers_[image_index];
+  render_pass_info.renderArea.offset = {0, 0};
+  render_pass_info.renderArea.extent = swap_chain_extent_;
+  VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+  render_pass_info.clearValueCount = 1;
+  render_pass_info.pClearValues = &clear_color;
+
+  vkCmdBeginRenderPass(command_buffer, &render_pass_info,
+                       VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    graphics_pipeline_);
+  VkViewport viewport{};
+  viewport.x = 0.0f;
+  viewport.y = 0.0f;
+  viewport.width = static_cast<float>(swap_chain_extent_.width);
+  viewport.height = static_cast<float>(swap_chain_extent_.height);
+  viewport.minDepth = 0.0f;
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.offset = {0, 0};
+  scissor.extent = swap_chain_extent_;
+  vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+  vkCmdDraw(command_buffer, 3, 1, 0, 0);
+  vkCmdEndRenderPass(command_buffer);
+
+  if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+    spdlog::error("Failed to record command buffer.");
+    return;
+  }
+}
+
+void VulkanEngine::CreateSyncObjects() {
+  VkSemaphoreCreateInfo semaphore_info{};
+  semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  VkFenceCreateInfo fence_info{};
+  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  if (vkCreateSemaphore(device_, &semaphore_info, nullptr,
+                        &image_available_semaphore_) != VK_SUCCESS ||
+      vkCreateSemaphore(device_, &semaphore_info, nullptr,
+                        &render_finished_semaphore_) != VK_SUCCESS ||
+      vkCreateFence(device_, &fence_info, nullptr, &in_flight_fence_) !=
+          VK_SUCCESS) {
+    spdlog::error("Failed to create semaphores.");
+    return;
+  }
+}
+
+void VulkanEngine::DrawFrame() {
+  vkWaitForFences(device_, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
+  vkResetFences(device_, 1, &in_flight_fence_);
+
+  uint32_t image_index;
+  vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX,
+                        image_available_semaphore_, VK_NULL_HANDLE,
+                        &image_index);
+
+  vkResetCommandBuffer(command_buffer_, 0);
+  RecordCommandBuffer(command_buffer_, image_index);
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+  VkSemaphore wait_semaphores[] = {image_available_semaphore_};
+  VkPipelineStageFlags wait_stages[] = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = wait_semaphores;
+  submit_info.pWaitDstStageMask = wait_stages;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer_;
+
+  VkSemaphore signal_semaphores[] = {render_finished_semaphore_};
+  submit_info.signalSemaphoreCount = 1;
+  submit_info.pSignalSemaphores = signal_semaphores;
+
+  if (vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fence_) !=
+      VK_SUCCESS) {
+    spdlog::error("Failed to submit draw command buffer.");
+    return;
+  }
+
+  VkPresentInfoKHR present_info{};
+  present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = signal_semaphores;
+
+  VkSwapchainKHR swap_chains[] = {swap_chain_};
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = swap_chains;
+  present_info.pImageIndices = &image_index;
+
+  vkQueuePresentKHR(presentation_queue_, &present_info);
 }
