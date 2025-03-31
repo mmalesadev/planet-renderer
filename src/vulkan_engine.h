@@ -54,6 +54,12 @@ private:
   // Image views
   void CreateImageViews();
 
+  // Graphics pipeline
+  void CreateGraphicsPipeline();
+  std::optional<VkShaderModule>
+  CreateShaderModule(const std::vector<char> &code);
+  void CreateRenderPass();
+
   VkInstance instance_;
   VkDebugUtilsMessengerEXT debug_messenger_;
   VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
@@ -66,6 +72,9 @@ private:
   VkFormat swap_chain_image_format_;
   VkExtent2D swap_chain_extent_;
   std::vector<VkImageView> swap_chain_image_views_;
+  VkRenderPass render_pass_;
+  VkPipelineLayout pipeline_layout_;
+  VkPipeline graphics_pipeline_;
 
   bool running_;
   SDL_Window *window_;
