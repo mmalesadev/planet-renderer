@@ -1,6 +1,7 @@
 #include "vulkan_engine.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
@@ -10,7 +11,6 @@
 #include <optional>
 #include <set>
 #include <spdlog/spdlog.h>
-#include <unistd.h>
 #include <vulkan/vulkan_core.h>
 
 namespace {
@@ -122,7 +122,14 @@ void VulkanEngine::Destroy() {
 }
 
 void VulkanEngine::InitSDL() {
-  SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland");
+#ifdef __linux__
+  if (getenv("WAYLAND_DISPLAY")) {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland");
+  }
+  else if (getenv("DISPLAY")) 
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+  }
+#endif
   SDL_SetAppMetadata("Planet Renderer", "0.0.1", "com.example.planet_renderer");
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     spdlog::error("Failed to initialize SDL: {}", SDL_GetError());
