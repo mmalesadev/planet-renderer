@@ -50,6 +50,8 @@ private:
       const std::vector<VkPresentModeKHR> &available_present_modes);
   VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
   SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
+  void CleanupSwapChain();
+  void RecreateSwapChain();
 
   // Image views
   void CreateImageViews();
@@ -90,10 +92,13 @@ private:
   VkPipeline graphics_pipeline_;
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
   VkCommandPool command_pool_;
-  VkCommandBuffer command_buffer_;
-  VkSemaphore image_available_semaphore_;
-  VkSemaphore render_finished_semaphore_;
-  VkFence in_flight_fence_;
+  std::vector<VkCommandBuffer> command_buffers_;
+  std::vector<VkSemaphore> image_available_semaphores_;
+  std::vector<VkSemaphore> render_finished_semaphores_;
+  std::vector<VkFence> in_flight_fences_;
+  bool framebuffer_resized_ = false;
+
+  uint32_t current_frame_ = 0;
 
   bool running_;
   SDL_Window *window_;
