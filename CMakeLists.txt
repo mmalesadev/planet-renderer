@@ -10,7 +10,19 @@ find_package(Vulkan REQUIRED)
 
 # Sources
 file(GLOB SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.h")
-add_executable(${PROJECT_NAME} ${SRC})
+
+# Imgui sources
+file(GLOB IMGUI_SRC CONFIGURE_DEPENDS
+    "libs/imgui/*.cpp"
+    "libs/imgui/*.h"
+    "libs/imgui/backends/imgui_impl_sdl3.cpp"
+    "libs/imgui/backends/imgui_impl_vulkan.cpp"
+)
+
+add_executable(${PROJECT_NAME} ${SRC} ${IMGUI_SRC})
+
+# Imgui headers
+target_include_directories(${PROJECT_NAME} PRIVATE libs/imgui libs/imgui/backends)
 
 # Shaders
 file(GLOB SHADERS CONFIGURE_DEPENDS "src/shaders/*.vert" "src/shaders/*.frag")

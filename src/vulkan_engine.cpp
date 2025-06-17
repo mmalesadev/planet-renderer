@@ -14,6 +14,10 @@
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan_core.h>
 
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_vulkan.h"
+
 namespace {
 
 const std::vector<const char *> kValidationLayers = {
@@ -55,6 +59,15 @@ std::vector<char> ReadFile(const std::string &filename) {
   return buffer;
 }
 
+static void check_vk_result(VkResult err) {
+  if (err == 0) {
+    return;
+  }
+  spdlog::error("[vulkan] Error: VkResult = {}", (int)err);
+  if (err < 0)
+    abort();
+}
+
 } // namespace
 
 void VulkanEngine::Init() {
@@ -74,12 +87,15 @@ void VulkanEngine::Init() {
   CreateCommandPool();
   CreateCommandBuffer();
   CreateSyncObjects();
+  InitImGui();
 }
 
 void VulkanEngine::Run() {
   SDL_Event event;
   while (running_) {
     while (SDL_PollEvent(&event)) {
+      ImGui_ImplSDL3_ProcessEvent(&event);
+
       switch (event.type) {
       case SDL_EVENT_QUIT:
         running_ = false;
@@ -89,16 +105,23 @@ void VulkanEngine::Run() {
         break;
       }
     }
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow();
 
     DrawFrame();
 
     vkDeviceWaitIdle(device_);
-    // Slow down to 60 FPS
-    SDL_Delay(16);
   }
 }
 
 void VulkanEngine::Destroy() {
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext();
+  vkDestroyDescriptorPool(device_, imgui_descriptor_pool_, nullptr);
+
   CleanupSwapChain();
   vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
   vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
@@ -125,6 +148,7 @@ void VulkanEngine::Destroy() {
 
   vkDestroySurfaceKHR(instance_, surface_, nullptr);
   vkDestroyInstance(instance_, nullptr);
+
   SDL_DestroyWindow(window_);
   SDL_Quit();
 }
@@ -133,11 +157,11 @@ void VulkanEngine::InitSDL() {
 #ifdef __linux__
   if (getenv("WAYLAND_DISPLAY")) {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland");
-  }
-  else if (getenv("DISPLAY")) 
+  } else if (getenv("DISPLAY")) {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
   }
 #endif
+
   SDL_SetAppMetadata("Planet Renderer", "0.0.1", "com.example.planet_renderer");
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     spdlog::error("Failed to initialize SDL: {}", SDL_GetError());
@@ -228,6 +252,52 @@ void VulkanEngine::ListAvailableExtensions() const {
   for (const auto &extension : extensions) {
     spdlog::info("{}", extension.extensionName);
   }
+}
+
+void VulkanEngine::InitImGui() {
+  VkDescriptorPoolSize pool_sizes[] = {
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+       IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE},
+  };
+  VkDescriptorPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  pool_info.maxSets = 0;
+  for (VkDescriptorPoolSize &pool_size : pool_sizes)
+    pool_info.maxSets += pool_size.descriptorCount;
+  pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
+  pool_info.pPoolSizes = pool_sizes;
+
+  if (vkCreateDescriptorPool(device_, &pool_info, nullptr,
+                             &imgui_descriptor_pool_) != VK_SUCCESS) {
+    spdlog::error("Failed to create ImGui descriptor pool.");
+    return;
+  }
+
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO &io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+  ImGui_ImplSDL3_InitForVulkan(window_);
+  ImGui_ImplVulkan_InitInfo init_info = {};
+  init_info.Instance = instance_;
+  init_info.PhysicalDevice = physical_device_;
+  init_info.Device = device_;
+  QueueFamilyIndices indices = FindQueueFamilies(physical_device_);
+  init_info.QueueFamily = indices.graphics_family.value();
+  init_info.Queue = graphics_queue_;
+  init_info.DescriptorPool = imgui_descriptor_pool_;
+  init_info.RenderPass = render_pass_;
+  init_info.Subpass = 0;
+  init_info.MinImageCount = 2;
+  init_info.ImageCount = 2;
+  init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+  init_info.Allocator = nullptr;
+  init_info.CheckVkResultFn = check_vk_result;
+  ImGui_ImplVulkan_Init(&init_info);
 }
 
 bool VulkanEngine::CheckValidationLayerSupport() {
@@ -867,6 +937,9 @@ void VulkanEngine::RecordCommandBuffer(VkCommandBuffer command_buffer,
   scissor.extent = swap_chain_extent_;
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
   vkCmdDraw(command_buffer, 3, 1, 0, 0);
+
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+
   vkCmdEndRenderPass(command_buffer);
 
   if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
@@ -920,6 +993,7 @@ void VulkanEngine::DrawFrame() {
   vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
 
   vkResetCommandBuffer(command_buffers_[current_frame_], 0);
+  ImGui::Render();
   RecordCommandBuffer(command_buffers_[current_frame_], image_index);
 
   VkSubmitInfo submit_info{};
