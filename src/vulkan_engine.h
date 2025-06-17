@@ -30,6 +30,7 @@ private:
   void InitVulkanInstance();
   void CreateSurface();
   void ListAvailableExtensions() const;
+  void InitImGui();
 
   // Validation Layers
   bool CheckValidationLayerSupport();
@@ -98,8 +99,10 @@ private:
   std::vector<VkFence> in_flight_fences_;
   bool framebuffer_resized_ = false;
 
-  uint32_t current_frame_ = 0;
+  VkDescriptorPool imgui_descriptor_pool_;
 
-  bool running_;
   SDL_Window *window_;
+
+  uint32_t current_frame_ = 0;
+  bool running_;
 };
