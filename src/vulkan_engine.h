@@ -74,6 +74,7 @@ private:
   void CreateVertexBuffer();
   uint32_t FindMemoryType(uint32_t type_filter,
                           VkMemoryPropertyFlags properties);
+  void CreateIndexBuffer();
 
   // Commands
   void CreateCommandPool();
@@ -102,8 +103,24 @@ private:
   VkPipeline graphics_pipeline_;
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
   VkCommandPool command_pool_;
+
+  // NOTE:
+  // You should allocate multiple resources like buffers from a single memory
+  // allocation.
+  // NOTE:
+  // Driver developers recommend that you also store multiple buffers, like
+  // the vertex and index buffer, into a single VkBuffer and use offsets in
+  // commands like vkCmdBindVertexBuffers. The advantage is that your data is
+  // more cache friendly in that case, because it's closer together. It is even
+  // possible to reuse the same chunk of memory for multiple resources if they
+  // are not used during the same render operations, provided that their data is
+  // refreshed, of course. This is known as aliasing and some Vulkan functions
+  // have explicit flags to specify that you want to do this.
   VkBuffer vertex_buffer_;
   VkDeviceMemory vertex_buffer_memory_;
+  VkBuffer index_buffer_;
+  VkDeviceMemory index_buffer_memory_;
+
   std::vector<VkCommandBuffer> command_buffers_;
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
