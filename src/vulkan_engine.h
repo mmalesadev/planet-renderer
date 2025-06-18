@@ -66,6 +66,11 @@ private:
   // Framebuffers
   void CreateFramebuffers();
 
+  // Vertex Buffers
+  void CreateVertexBuffer();
+  uint32_t FindMemoryType(uint32_t type_filter,
+                          VkMemoryPropertyFlags properties);
+
   // Commands
   void CreateCommandPool();
   void CreateCommandBuffer();
@@ -93,6 +98,8 @@ private:
   VkPipeline graphics_pipeline_;
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
   VkCommandPool command_pool_;
+  VkBuffer vertex_buffer_;
+  VkDeviceMemory vertex_buffer_memory_;
   std::vector<VkCommandBuffer> command_buffers_;
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
