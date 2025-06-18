@@ -911,42 +911,106 @@ void VulkanEngine::CreateFramebuffers() {
   }
 }
 
-void VulkanEngine::CreateVertexBuffer() {
+void VulkanEngine::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                                VkMemoryPropertyFlags properties,
+                                VkBuffer &buffer,
+                                VkDeviceMemory &buffer_memory) {
   VkBufferCreateInfo buffer_info{};
   buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buffer_info.size = sizeof(vertices[0]) * vertices.size();
-  buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  buffer_info.size = size;
+  buffer_info.usage = usage;
   buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  if (vkCreateBuffer(device_, &buffer_info, nullptr, &vertex_buffer_) !=
-      VK_SUCCESS) {
-    spdlog::error("Failed to create vertex buffer.");
+  if (vkCreateBuffer(device_, &buffer_info, nullptr, &buffer) != VK_SUCCESS) {
+    spdlog::error("Failed to create buffer.");
     return;
   }
 
   VkMemoryRequirements memory_requirements;
-  vkGetBufferMemoryRequirements(device_, vertex_buffer_, &memory_requirements);
+  vkGetBufferMemoryRequirements(device_, buffer, &memory_requirements);
 
   VkMemoryAllocateInfo allocate_info{};
   allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
   allocate_info.allocationSize = memory_requirements.size;
   allocate_info.memoryTypeIndex =
-      FindMemoryType(memory_requirements.memoryTypeBits,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      FindMemoryType(memory_requirements.memoryTypeBits, properties);
 
-  if (vkAllocateMemory(device_, &allocate_info, nullptr,
-                       &vertex_buffer_memory_) != VK_SUCCESS) {
-    spdlog::error("Failed to allocate vertex buffer memory.");
+  // NOTE: Real world application should NOT call vkAllocateMemory for every
+  // individual buffer. The right way is to create a custom allocator that
+  // splits up single allocation among many objects using offset param.
+  // This can be either implemented or VulkanMemoryAllocator can be used.
+  // (https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
+  if (vkAllocateMemory(device_, &allocate_info, nullptr, &buffer_memory) !=
+      VK_SUCCESS) {
+    spdlog::error("Failed to allocate buffer memory.");
     return;
   }
 
-  vkBindBufferMemory(device_, vertex_buffer_, vertex_buffer_memory_, 0);
+  vkBindBufferMemory(device_, buffer, buffer_memory, 0);
+}
 
+void VulkanEngine::CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer,
+                              VkDeviceSize size) {
+  VkCommandBufferAllocateInfo allocate_info{};
+  allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  // NOTE: A separate command pool could be used here for optimization.
+  // It would use VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag.
+  allocate_info.commandPool = command_pool_;
+  allocate_info.commandBufferCount = 1;
+
+  VkCommandBuffer command_buffer;
+  vkAllocateCommandBuffers(device_, &allocate_info, &command_buffer);
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(command_buffer, &begin_info);
+
+  VkBufferCopy copy_region{};
+  copy_region.srcOffset = 0;
+  copy_region.dstOffset = 0;
+  copy_region.size = size;
+  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+  vkEndCommandBuffer(command_buffer);
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer;
+
+  vkQueueSubmit(graphics_queue_, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphics_queue_);
+
+  vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
+}
+
+void VulkanEngine::CreateVertexBuffer() {
+  VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+
+  VkBuffer staging_buffer;
+  VkDeviceMemory staging_buffer_memory;
+  CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               staging_buffer, staging_buffer_memory);
   void *data;
-  vkMapMemory(device_, vertex_buffer_memory_, 0, buffer_info.size, 0, &data);
-  memcpy(data, vertices.data(), (size_t)buffer_info.size);
-  vkUnmapMemory(device_, vertex_buffer_memory_);
+  vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
+  memcpy(data, vertices.data(), (size_t)buffer_size);
+  vkUnmapMemory(device_, staging_buffer_memory);
+
+  CreateBuffer(buffer_size,
+               VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertex_buffer_,
+               vertex_buffer_memory_);
+
+  CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
+
+  vkDestroyBuffer(device_, staging_buffer, nullptr);
+  vkFreeMemory(device_, staging_buffer_memory, nullptr);
 }
 
 uint32_t VulkanEngine::FindMemoryType(uint32_t type_filter,
