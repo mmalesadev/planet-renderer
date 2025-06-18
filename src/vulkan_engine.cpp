@@ -51,9 +51,12 @@ struct Vertex {
   }
 };
 
-const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                      {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                      {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+const std::vector<Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
 const std::vector<const char *> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation"};
@@ -121,6 +124,7 @@ void VulkanEngine::Init() {
   CreateFramebuffers();
   CreateCommandPool();
   CreateVertexBuffer();
+  CreateIndexBuffer();
   CreateCommandBuffer();
   CreateSyncObjects();
   InitImGui();
@@ -159,8 +163,13 @@ void VulkanEngine::Destroy() {
   vkDestroyDescriptorPool(device_, imgui_descriptor_pool_, nullptr);
 
   CleanupSwapChain();
+
   vkDestroyBuffer(device_, vertex_buffer_, nullptr);
   vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
+
+  vkDestroyBuffer(device_, index_buffer_, nullptr);
+  vkFreeMemory(device_, index_buffer_memory_, nullptr);
+
   vkDestroyPipeline(device_, graphics_pipeline_, nullptr);
   vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
 
@@ -1030,6 +1039,31 @@ uint32_t VulkanEngine::FindMemoryType(uint32_t type_filter,
   return 0;
 }
 
+void VulkanEngine::CreateIndexBuffer() {
+  VkDeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+
+  VkBuffer staging_buffer;
+  VkDeviceMemory staging_buffer_memory;
+  CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               staging_buffer, staging_buffer_memory);
+  void *data;
+  vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
+  memcpy(data, indices.data(), (size_t)buffer_size);
+  vkUnmapMemory(device_, staging_buffer_memory);
+
+  CreateBuffer(
+      buffer_size,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer_, index_buffer_memory_);
+
+  CopyBuffer(staging_buffer, index_buffer_, buffer_size);
+
+  vkDestroyBuffer(device_, staging_buffer, nullptr);
+  vkFreeMemory(device_, staging_buffer_memory, nullptr);
+}
+
 void VulkanEngine::CreateCommandPool() {
   QueueFamilyIndices queue_family_indices = FindQueueFamilies(physical_device_);
 
@@ -1089,6 +1123,8 @@ void VulkanEngine::RecordCommandBuffer(VkCommandBuffer command_buffer,
   VkDeviceSize offsets[] = {0};
   vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
 
+  vkCmdBindIndexBuffer(command_buffer, index_buffer_, 0, VK_INDEX_TYPE_UINT32);
+
   VkViewport viewport{};
   viewport.x = 0.0f;
   viewport.y = 0.0f;
@@ -1103,7 +1139,9 @@ void VulkanEngine::RecordCommandBuffer(VkCommandBuffer command_buffer,
   scissor.extent = swap_chain_extent_;
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-  vkCmdDraw(command_buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+  // vkCmdDraw(command_buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+  vkCmdDrawIndexed(command_buffer, static_cast<uint32_t>(indices.size()), 1, 0,
+                   0, 0);
 
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 
