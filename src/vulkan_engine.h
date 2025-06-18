@@ -67,6 +67,10 @@ private:
   void CreateFramebuffers();
 
   // Vertex Buffers
+  void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                    VkMemoryPropertyFlags properties, VkBuffer &buffer,
+                    VkDeviceMemory &buffer_memory);
+  void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
   void CreateVertexBuffer();
   uint32_t FindMemoryType(uint32_t type_filter,
                           VkMemoryPropertyFlags properties);
