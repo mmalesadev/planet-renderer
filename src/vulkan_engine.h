@@ -58,6 +58,7 @@ private:
   void CreateImageViews();
 
   // Graphics pipeline
+  void CreateDescriptorSetLayout();
   void CreateGraphicsPipeline();
   std::optional<VkShaderModule>
   CreateShaderModule(const std::vector<char> &code);
@@ -66,7 +67,7 @@ private:
   // Framebuffers
   void CreateFramebuffers();
 
-  // Vertex Buffers
+  // Buffers: Vertex, Index, Uniform
   void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags properties, VkBuffer &buffer,
                     VkDeviceMemory &buffer_memory);
@@ -75,6 +76,10 @@ private:
   uint32_t FindMemoryType(uint32_t type_filter,
                           VkMemoryPropertyFlags properties);
   void CreateIndexBuffer();
+  void CreateUniformBuffers();
+  void UpdateUniformBuffer(uint32_t current_image);
+  void CreateDescriptorPool();
+  void CreateDescriptorSets();
 
   // Commands
   void CreateCommandPool();
@@ -99,11 +104,11 @@ private:
   VkExtent2D swap_chain_extent_;
   std::vector<VkImageView> swap_chain_image_views_;
   VkRenderPass render_pass_;
+  VkDescriptorSetLayout descriptor_set_layout_;
   VkPipelineLayout pipeline_layout_;
   VkPipeline graphics_pipeline_;
   std::vector<VkFramebuffer> swap_chain_framebuffers_;
   VkCommandPool command_pool_;
-
   // NOTE:
   // You should allocate multiple resources like buffers from a single memory
   // allocation.
@@ -120,7 +125,11 @@ private:
   VkDeviceMemory vertex_buffer_memory_;
   VkBuffer index_buffer_;
   VkDeviceMemory index_buffer_memory_;
-
+  std::vector<VkBuffer> uniform_buffers_;
+  std::vector<VkDeviceMemory> uniform_buffers_memory_;
+  std::vector<void *> uniform_buffers_mapped_;
+  VkDescriptorPool descriptor_pool_;
+  std::vector<VkDescriptorSet> descriptor_sets_;
   std::vector<VkCommandBuffer> command_buffers_;
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
