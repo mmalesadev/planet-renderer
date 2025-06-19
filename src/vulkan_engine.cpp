@@ -20,7 +20,6 @@
 #include <optional>
 #include <set>
 #include <spdlog/spdlog.h>
-#include <unistd.h>
 #include <vulkan/vulkan_core.h>
 
 #include "imgui.h"
@@ -147,21 +146,19 @@ void VulkanEngine::Init() {
 
 void VulkanEngine::Run() {
   while (running_) {
-    SDL_PumpEvents();
     SDL_Event event;
     while (SDL_PollEvent(&event) != 0) {
-      spdlog::info("MYTEST INSIDE POLL EVENT HANDLING");
       switch (event.type) {
       case SDL_EVENT_QUIT:
         running_ = false;
         break;
       case SDL_EVENT_WINDOW_RESIZED:
-        framebuffer_resized_ = true;
+        vkDeviceWaitIdle(device_);
+        RecreateSwapChain();
         break;
       }
       ImGui_ImplSDL3_ProcessEvent(&event);
     }
-    spdlog::info("MYTEST");
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -1386,9 +1383,7 @@ void VulkanEngine::DrawFrame() {
 
   result = vkQueuePresentKHR(presentation_queue_, &present_info);
 
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-      framebuffer_resized_) {
-    framebuffer_resized_ = true;
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
     RecreateSwapChain();
   } else if (result != VK_SUCCESS) {
     spdlog::error("Failed to present swap chain image.");
