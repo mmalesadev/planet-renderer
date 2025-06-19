@@ -134,7 +134,6 @@ private:
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
   std::vector<VkFence> in_flight_fences_;
-  bool framebuffer_resized_ = false;
 
   VkDescriptorPool imgui_descriptor_pool_;
 
