@@ -152,13 +152,25 @@ void VulkanEngine::Run() {
       case SDL_EVENT_QUIT:
         running_ = false;
         break;
-      case SDL_EVENT_WINDOW_RESIZED:
-        vkDeviceWaitIdle(device_);
-        RecreateSwapChain();
+      case SDL_EVENT_WINDOW_MINIMIZED:
+        freeze_rendering_ = true;
+        break;
+      case SDL_EVENT_WINDOW_RESTORED:
+        freeze_rendering_ = false;
         break;
       }
       ImGui_ImplSDL3_ProcessEvent(&event);
     }
+
+    if (freeze_rendering_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      continue;
+    }
+
+    if (resize_requested_) {
+      RecreateSwapChain();
+    }
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -699,7 +711,7 @@ void VulkanEngine::RecreateSwapChain() {
   int height = 0;
 
   // Handle minimization by pausing until the window is in the foreground again
-  while (width == 0 | height == 0) {
+  while (width == 0 || height == 0) {
     SDL_GetWindowSize(window_, &width, &height);
     SDL_WaitEvent(nullptr);
   }
@@ -710,6 +722,7 @@ void VulkanEngine::RecreateSwapChain() {
   CreateSwapChain();
   CreateImageViews();
   CreateFramebuffers();
+  resize_requested_ = false;
 }
 
 void VulkanEngine::CreateImageViews() {
@@ -1334,7 +1347,7 @@ void VulkanEngine::DrawFrame() {
                             VK_NULL_HANDLE, &image_index);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-    RecreateSwapChain();
+    resize_requested_ = true;
     return;
   } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
     spdlog::error("Failed to acquire swap chain image.");
@@ -1384,7 +1397,7 @@ void VulkanEngine::DrawFrame() {
   result = vkQueuePresentKHR(presentation_queue_, &present_info);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    RecreateSwapChain();
+    resize_requested_ = true;
   } else if (result != VK_SUCCESS) {
     spdlog::error("Failed to present swap chain image.");
     return;
