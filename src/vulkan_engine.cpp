@@ -152,6 +152,9 @@ void VulkanEngine::Run() {
       case SDL_EVENT_QUIT:
         running_ = false;
         break;
+      case SDL_EVENT_WINDOW_RESIZED:
+        resize_requested_ = true;
+        break;
       case SDL_EVENT_WINDOW_MINIMIZED:
         freeze_rendering_ = true;
         break;

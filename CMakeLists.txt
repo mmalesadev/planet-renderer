@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 4.0)
 
 project(planet-renderer)
 
+# TODO: Change default build type to Release
 set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 set(CMAKE_CXX_STANDARD 20)
