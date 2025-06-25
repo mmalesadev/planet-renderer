@@ -81,11 +81,29 @@ private:
   void CreateDescriptorPool();
   void CreateDescriptorSets();
 
+  // Depth buffer
+  void CreateDepthResources();
+  std::optional<VkFormat>
+  FindSupportedFormat(const std::vector<VkFormat> &candidates,
+                      VkImageTiling tiling, VkFormatFeatureFlags features);
+  std::optional<VkFormat> FindDepthFormat();
+  std::optional<VkImageView> CreateImageView(VkImage image, VkFormat format,
+                                             VkImageAspectFlags aspect_flags);
+  void CreateImage(uint32_t width, uint32_t height, VkFormat format,
+                   VkImageTiling tiling, VkImageUsageFlags usage,
+                   VkMemoryPropertyFlags properties, VkImage &image,
+                   VkDeviceMemory &image_memory);
+  void TransitionImageLayout(VkImage image, VkFormat format,
+                             VkImageLayout old_layout,
+                             VkImageLayout new_layout);
+
   // Commands
   void CreateCommandPool();
   void CreateCommandBuffer();
   void RecordCommandBuffer(VkCommandBuffer command_buffer,
                            uint32_t image_index);
+  VkCommandBuffer BeginSingleTimeCommands();
+  void EndSingleTimeCommands(VkCommandBuffer command_buffer);
 
   // Drawing
   void CreateSyncObjects();
@@ -130,6 +148,9 @@ private:
   std::vector<void *> uniform_buffers_mapped_;
   VkDescriptorPool descriptor_pool_;
   std::vector<VkDescriptorSet> descriptor_sets_;
+  VkImage depth_image_;
+  VkDeviceMemory depth_image_memory_;
+  VkImageView depth_image_view_;
   std::vector<VkCommandBuffer> command_buffers_;
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
