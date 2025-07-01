@@ -89,7 +89,8 @@ private:
   std::optional<VkFormat> FindDepthFormat();
   std::optional<VkImageView> CreateImageView(VkImage image, VkFormat format,
                                              VkImageAspectFlags aspect_flags);
-  void CreateImage(uint32_t width, uint32_t height, VkFormat format,
+  void CreateImage(uint32_t width, uint32_t height,
+                   VkSampleCountFlagBits num_samples, VkFormat format,
                    VkImageTiling tiling, VkImageUsageFlags usage,
                    VkMemoryPropertyFlags properties, VkImage &image,
                    VkDeviceMemory &image_memory);
@@ -104,6 +105,10 @@ private:
                            uint32_t image_index);
   VkCommandBuffer BeginSingleTimeCommands();
   void EndSingleTimeCommands(VkCommandBuffer command_buffer);
+
+  // Multisapmpling
+  VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+  void CreateColorResources();
 
   // Drawing
   void CreateSyncObjects();
@@ -155,6 +160,10 @@ private:
   std::vector<VkSemaphore> image_available_semaphores_;
   std::vector<VkSemaphore> render_finished_semaphores_;
   std::vector<VkFence> in_flight_fences_;
+  VkSampleCountFlagBits msaa_samples_ = VK_SAMPLE_COUNT_1_BIT;
+  VkImage color_image_;
+  VkDeviceMemory color_image_memory_;
+  VkImageView color_image_view_;
   bool resize_requested_ = false;
   bool freeze_rendering_ = false;
 
